@@ -1,71 +1,90 @@
 # Wordle Game
 
+import contextlib
 import pathlib
 import random
-from string import ascii_letters
+from string import ascii_letters, ascii_uppercase
+
 from rich.console import Console
 from rich.theme import Theme
 
 console = Console(width=40, theme=Theme({'warning':'red on yellow'}))
-console.rule(':leafy_green: WORDLE :leafy_green:')
+
+NUM_LETTERS = 5
+NUM_GUESSES = 6
+WORDS_FILE = pathlib.Path(__file__).parent / 'wordlist.txt'
 
 def play_wordle():
-    words_file = pathlib.Path(__file__).parent / 'wordlist.txt'
-    word = get_random_word(words_file.read_text(encoding='utf-8').split('\n'))
+    word = get_random_word(WORDS_FILE.read_text(encoding='utf-8').split('\n'))
+    guesses = ['_' * NUM_LETTERS] * NUM_GUESSES
 
-    for num in range(1, 7):
-        guess = input(f'\nGuess {num}: ').upper()
-        show_guess(guess, word)
-        if guess == word:
-            break
+    with contextlib.suppress(KeyboardInterrupt):
+        for index in range(NUM_GUESSES):
+            refresh_page(f'Guess {index + 1}')
+            show_guesses(guesses, word)
+
+            guesses[index] = guess_word(guesses[:index])
+            if guesses[index] == word:
+                break
+    
+    game_over(guesses, word, guessed_correctly=guesses[index] == word)
+
+def get_random_word(wordlist):
+    if words := [
+        word.upper()
+        for word in wordlist
+        if len(word) == NUM_LETTERS and all(letter in ascii_letters for letter in word)
+    ]:
+        return random.choice(words)
     else:
-        game_over(word)
+        console.print(f"No words of length {NUM_LETTERS} in the word list", style="warning")
+        raise SystemExit()
 
 def refresh_page(headline):
     console.clear()
     console.rule(f'[bold blue]:leafy_green: {headline} :leafy_green:[/]\n')
 
-def get_random_word(wordlist):
-    """Show the user's guess on the terminal and classify all letters.
+def show_guesses(guesses, word):
+    letter_status = {letter: letter for letter in ascii_uppercase}
+    for guess in guesses:
+        styled_guess = []
+        for guessed_char, actual_char in zip(guess, word):
+            if guessed_char == actual_char:
+                style = "bold white on green"
+            elif guessed_char in word:
+                style = "bold white on yellow"
+            elif guessed_char in ascii_letters:
+                style = "white on #666666"
+            else:
+                style = "dim"
+            styled_guess.append(f'[{style}]{guessed_char}[/]')
+            if guessed_char != '_':
+                letter_status[guessed_char] = f'[{style}]{guessed_char}[/]'
+        console.print(''.join(styled_guess), justify='center')
+    console.print('\n' + ''.join(letter_status.values()), justify='center')
 
-    ## Example:
+def guess_word(previous_guesses):
+    guess = console.input('\nGuess word: ').upper()
 
-    >>> get_random_word(["snake", "worm", "it'll"])
-    'SNAKE'
-    """
-    words = [
-        word.upper()
-        for word in wordlist
-        if len(word) == 5 and all(letter in ascii_letters for letter in word)
-    ]
-    return random.choice(words)
+    if guess in previous_guesses:
+        console.print(f"You've already guessed {guess}.", style="warning")
+        guess_word(previous_guesses)
+    if len(guess) != NUM_LETTERS:
+        console.print(f"Your guess must be {NUM_LETTERS} letters.", style="warning")
+        guess_word(previous_guesses)
+    if any((invalid := letter) not in ascii_letters for letter in guess):
+        console.print(f"Invalid letter: '{invalid}'. Please use English letters.", style="warning")
+        return guess_word(previous_guesses)
+    return guess
 
-def show_guess(guess, word):
-    """Show the user's guess on the terminal and classify all letters.
+def game_over(guesses, word, guessed_correctly):
+    refresh_page('Game Over')
+    show_guesses(guesses, word)
 
-    ## Example:
-
-    >>> show_guess("CRANE", "SNAKE")
-    Correct letters: A, E
-    Misplaced letters: N
-    Incorrect letters: C, R
-    """
-    correct = {guessed_char for guessed_char, actual_char in zip(guess, word) if guessed_char == actual_char}
-    misplaced = set(guess) & set(word) - correct
-    incorrect = set(guess) - set(word)
-    print('Correct letters:', ', '.join(sorted(correct)))
-    print('Misplaced letters:', ', '.join(sorted(misplaced)))
-    print('Incorrect letters:', ', '.join(sorted(incorrect)))
-
-def game_over(word):
-    """Print the correct word.
-
-    ## Example:
-
-    >>> game_over("SNAKE")
-    The word was: SNAKE
-    """
-    print(f'The word was: {word}')
+    if guessed_correctly:
+        console.print(f'[bold white on green]Correct, the word is {word}[/]')
+    else:
+        console.print(f'[bold white on red]Sorry, the word was {word}[/]')
 
 if __name__ == '__main__':
     play_wordle()
